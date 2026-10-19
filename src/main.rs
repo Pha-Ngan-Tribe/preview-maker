@@ -150,81 +150,81 @@ fn model_card(ui: &mut egui::Ui, model: &Model, texture: Option<&egui::TextureHa
         .inner_margin(Margin::same(PAD as i8))
         .show(ui, |ui| {
             ui.set_width(inner);
-            ui.spacing_mut().item_spacing.y = 3.0;
+            ui.vertical(|ui| {
+                ui.set_width(inner);
+                ui.spacing_mut().item_spacing.y = 3.0;
 
-            let (rect, _) = ui.allocate_exact_size(vec2(inner, inner), egui::Sense::hover());
-            ui.painter().rect_filled(
-                rect,
-                6.0,
-                if failed {
-                    Color32::from_rgb(24, 22, 26)
-                } else {
-                    Color32::from_rgb(26, 34, 44)
-                },
-            );
-
-            if let Some(texture) = texture {
-                ui.put(
+                let image_size = inner.min(280.0);
+                let (slot, _) =
+                    ui.allocate_exact_size(vec2(inner, image_size), egui::Sense::hover());
+                let rect =
+                    egui::Rect::from_center_size(slot.center(), vec2(image_size, image_size));
+                ui.painter().rect_filled(
                     rect,
-                    egui::Image::new(texture)
-                        .fit_to_exact_size(rect.size())
-                        .corner_radius(6.0),
+                    6.0,
+                    if failed {
+                        Color32::from_rgb(24, 22, 26)
+                    } else {
+                        Color32::from_rgb(26, 34, 44)
+                    },
                 );
-            } else if matches!(model.state, State::Pending) {
-                let spinner_rect = egui::Rect::from_center_size(rect.center(), vec2(26.0, 26.0));
-                egui::Spinner::new()
-                    .size(26.0)
-                    .color(ACCENT)
-                    .paint_at(ui, spinner_rect);
-            } else {
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "No image",
-                    FontId::proportional(13.0),
-                    DIM,
-                );
-            }
 
-            // status badge (drawn with lines so it doesn't depend on font glyphs)
-            if !matches!(model.state, State::Pending) {
-                let c = rect.right_top() + vec2(-15.0, 15.0);
-                let painter = ui.painter();
-                painter.circle_filled(c, 10.0, if failed { DANGER } else { ACCENT });
-                let stroke = Stroke::new(1.8_f32, Color32::WHITE);
-                if failed {
-                    painter.line_segment([c + vec2(-3.5, -3.5), c + vec2(3.5, 3.5)], stroke);
-                    painter.line_segment([c + vec2(-3.5, 3.5), c + vec2(3.5, -3.5)], stroke);
+                if let Some(texture) = texture {
+                    let source_size = texture.size_vec2();
+                    let scale = (rect.width() / source_size.x).min(rect.height() / source_size.y);
+                    let image_rect =
+                        egui::Rect::from_center_size(rect.center(), source_size * scale);
+                    ui.put(
+                        image_rect,
+                        egui::Image::new(texture)
+                            .fit_to_exact_size(image_rect.size())
+                            .corner_radius(6.0),
+                    );
+                } else if matches!(model.state, State::Pending) {
+                    let spinner_rect =
+                        egui::Rect::from_center_size(rect.center(), vec2(26.0, 26.0));
+                    egui::Spinner::new()
+                        .size(26.0)
+                        .color(ACCENT)
+                        .paint_at(ui, spinner_rect);
                 } else {
-                    painter.line_segment([c + vec2(-4.0, 0.5), c + vec2(-1.2, 3.3)], stroke);
-                    painter.line_segment([c + vec2(-1.2, 3.3), c + vec2(4.0, -3.0)], stroke);
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "No image",
+                        FontId::proportional(13.0),
+                        DIM,
+                    );
                 }
-            }
 
-            ui.add_space(5.0);
+                ui.add_space(5.0);
 
-            // primary line
-            let (title, title_color) = match (&model.state, model.title.is_empty()) {
-                (State::Pending, _) => ("Loading…".to_owned(), MUTED),
-                (_, true) => ("Untitled model".to_owned(), MUTED),
-                (_, false) => (model.title.clone(), TEXT),
-            };
-            ui.add(egui::Label::new(RichText::new(title).strong().color(title_color)).truncate());
-
-            // error line
-            if let State::Failed(error) = &model.state {
+                // primary line
+                let (title, title_color) = match (&model.state, model.title.is_empty()) {
+                    (State::Pending, _) => ("Loading…".to_owned(), MUTED),
+                    (_, true) => ("Untitled model".to_owned(), MUTED),
+                    (_, false) => (model.title.clone(), TEXT),
+                };
                 ui.add(
-                    egui::Label::new(RichText::new(error).small().color(DANGER_TEXT)).truncate(),
-                )
-                .on_hover_text(error);
-            }
+                    egui::Label::new(RichText::new(title).strong().color(title_color)).truncate(),
+                );
 
-            // id line
-            ui.add(
-                egui::Label::new(RichText::new(&model.id).monospace().small().color(DIM))
-                    .truncate(),
-            )
-            .on_hover_text(&model.id);
+                // error line
+                if let State::Failed(error) = &model.state {
+                    ui.add(
+                        egui::Label::new(RichText::new(error).small().color(DANGER_TEXT))
+                            .truncate(),
+                    )
+                    .on_hover_text(error);
+                }
+
+                // id line
+                ui.add(
+                    egui::Label::new(RichText::new(&model.id).monospace().small().color(DIM))
+                        .truncate(),
+                )
+                .on_hover_text(&model.id);
+            });
         });
 
     if ui.rect_contains_pointer(out.response.rect) {
@@ -460,11 +460,12 @@ impl eframe::App for PreviewApp {
                         }
 
                         let gap = 14.0;
-                        let min_card = 200.0;
-                        let available = ui.available_width() - 6.0;
+                        let min_card = 260.0;
+                        // Leave the same visual gutter at the right as the grid gap.
+                        let available = (ui.available_width() - gap).max(1.0);
                         let columns = (((available + gap) / (min_card + gap)).floor() as usize).max(1);
                         let card_width =
-                            ((available - gap * (columns - 1) as f32) / columns as f32).max(120.0);
+                            ((available - gap * (columns - 1) as f32) / columns as f32).max(1.0);
 
                         ui.spacing_mut().item_spacing = vec2(gap, gap);
                         for row in visible.chunks(columns) {
