@@ -39,7 +39,7 @@ const DANGER_BORDER: Color32 = Color32::from_rgb(90, 47, 46);
 
 fn main() -> eframe::Result {
     eframe::run_native(
-        "Preview Maker",
+        "Preview maker",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([1100.0, 820.0])
@@ -323,7 +323,7 @@ impl eframe::App for PreviewApp {
                             self.start_folder_scan(ctx.clone());
                         }
                         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                            ui.label(RichText::new("Preview Maker").heading().strong());
+                            ui.label(RichText::new("Preview maker").heading().strong());
                             ui.add_space(12.0);
                             if ui
                                 .add_enabled(enabled, secondary_button("Choose folder…"))
