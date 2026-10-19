@@ -367,6 +367,7 @@ impl eframe::App for PreviewApp {
 
         // ----- content -----
         let mut pick_folder = false;
+        let mut retry_failed_clicked = false;
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -383,10 +384,23 @@ impl eframe::App for PreviewApp {
                     .count();
                 let pending = self.models.iter().filter(|m| m.state == State::Pending).count();
 
-                ui.horizontal(|ui| {
+                ui.allocate_ui_with_layout(
+                    vec2(ui.available_width(), 40.0),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
                     ui.heading("Previews");
                     if total > 0 {
                         ui.label(RichText::new(format!("{saved} of {total} saved")).color(MUTED));
+                        if failed > 0
+                            && ui
+                                .add_enabled(
+                                    !self.running,
+                                    secondary_button("Retry failed"),
+                                )
+                                .clicked()
+                        {
+                            retry_failed_clicked = true;
+                        }
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
                             if chip(ui, &format!("Errors {failed}"), self.filter == Filter::Failed) {
@@ -400,7 +414,8 @@ impl eframe::App for PreviewApp {
                             }
                         });
                     }
-                });
+                    },
+                );
 
                 if self.running && self.fetching && total > 0 {
                     let fraction = (total - pending) as f32 / total as f32;
@@ -489,6 +504,9 @@ impl eframe::App for PreviewApp {
                 self.set_folder(path);
             }
         }
+        if retry_failed_clicked {
+            self.retry_failed(ctx.clone());
+        }
 
         if self.running {
             ctx.request_repaint_after(Duration::from_millis(100));
@@ -544,6 +562,39 @@ impl PreviewApp {
         self.events = Some(receiver);
         thread::spawn(move || {
             let result = scan_and_fetch(&root, &sender);
+            let _ = sender.send(Event::Finished(result));
+            ctx.request_repaint();
+        });
+    }
+
+    fn retry_failed(&mut self, ctx: egui::Context) {
+        let root = PathBuf::from(self.folder.trim());
+        let folders: Vec<(String, PathBuf)> = self
+            .models
+            .iter()
+            .filter(|model| matches!(model.state, State::Failed(_)))
+            .map(|model| (model.id.clone(), root.join(&model.id)))
+            .collect();
+        if folders.is_empty() {
+            return;
+        }
+
+        for (index, model) in self.models.iter_mut().enumerate() {
+            if matches!(model.state, State::Failed(_)) {
+                model.state = State::Pending;
+                model.title.clear();
+                model.image_path = None;
+                self.textures[index] = None;
+            }
+        }
+
+        self.running = true;
+        self.fetching = false;
+        self.status = format!("Retrying {} failed previews…", folders.len());
+        let (sender, receiver) = mpsc::channel();
+        self.events = Some(receiver);
+        thread::spawn(move || {
+            let result = fetch_folders(&folders, &sender);
             let _ = sender.send(Event::Finished(result));
             ctx.request_repaint();
         });
@@ -655,6 +706,10 @@ fn scan_and_fetch(root: &Path, events: &Sender<Event>) -> String {
         .collect();
     let _ = events.send(Event::Found(models));
 
+    fetch_folders(&folders, events)
+}
+
+fn fetch_folders(folders: &[(String, PathBuf)], events: &Sender<Event>) -> String {
     let total = folders.len();
     let mut downloaded = 0;
     for (index, (id, folder)) in folders.iter().enumerate() {
