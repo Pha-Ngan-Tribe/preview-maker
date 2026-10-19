@@ -15,12 +15,17 @@ cargo build --release
 
 APP="$ROOT_DIR/dist/Preview maker.app"
 CONTENTS="$APP/Contents"
+rm -rf "$CONTENTS/MacOS" "$CONTENTS/Resources"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp target/release/preview-maker "$CONTENTS/MacOS/Preview maker"
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHORT_VERSION@/$SHORT_VERSION/g" \
     macos/Info.plist.in > "$CONTENTS/Info.plist"
 printf 'APPL????' > "$CONTENTS/PkgInfo"
 cp macos/Credits.rtf "$CONTENTS/Resources/Credits.rtf"
+
+cp macos/AppIcon.icns "$CONTENTS/Resources/AppIcon.icns"
 /usr/bin/plutil -lint "$CONTENTS/Info.plist"
+codesign --force --deep --sign - "$APP"
+codesign --verify --deep --strict "$APP"
 
 printf 'Created %s\n' "$APP"

@@ -10,6 +10,8 @@
 	<string>Preview maker</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.previewmaker.local</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon.icns</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

@@ -38,19 +38,47 @@ const DANGER_TEXT: Color32 = Color32::from_rgb(229, 138, 134);
 const DANGER_BORDER: Color32 = Color32::from_rgb(90, 47, 46);
 
 fn main() -> eframe::Result {
+    let icon = image::load_from_memory(include_bytes!("../macos/AppIcon.png"))
+        .expect("decode app icon")
+        .to_rgba8();
+    let (icon_width, icon_height) = icon.dimensions();
+
     eframe::run_native(
         "Preview maker",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([1100.0, 820.0])
-                .with_min_inner_size([640.0, 500.0]),
+                .with_min_inner_size([640.0, 500.0])
+                .with_icon(egui::IconData {
+                    rgba: icon.into_raw(),
+                    width: icon_width,
+                    height: icon_height,
+                }),
             ..Default::default()
         },
         Box::new(|cc| {
+            #[cfg(target_os = "macos")]
+            set_macos_about_icon();
             apply_theme(&cc.egui_ctx);
             Ok(Box::<PreviewApp>::default())
         }),
     )
+}
+
+#[cfg(target_os = "macos")]
+fn set_macos_about_icon() {
+    use objc2::{AnyThread, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::{NSData, NSString};
+
+    let marker = MainThreadMarker::new().expect("app initialization runs on the main thread");
+    let image_data = NSData::with_bytes(include_bytes!("../macos/AppIcon.png"));
+    let image = NSImage::initWithData(NSImage::alloc(), &image_data)
+        .expect("decode app icon for About panel");
+    image.setName(Some(&NSString::from_str("NSApplicationIcon")));
+
+    // Registering the named image supplies the icon used by AppKit's standard About panel.
+    unsafe { NSApplication::sharedApplication(marker).setApplicationIconImage(Some(&image)) };
 }
 
 fn apply_theme(ctx: &egui::Context) {
