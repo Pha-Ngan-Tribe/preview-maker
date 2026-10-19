@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use eframe::egui;
+use eframe::egui::{
+    self, Align, Color32, CornerRadius, FontId, Layout, Margin, RichText, Stroke, StrokeKind,
+    TextStyle, vec2,
+};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -17,17 +20,230 @@ const IMAGE_HOSTS: [&str; 3] = [
     "https://b7.3ddd.ru/media/cache/tuk_model_custom_filter_ang_ru/",
 ];
 
+// ---------- palette ----------
+const BG: Color32 = Color32::from_rgb(15, 20, 25);
+const PANEL: Color32 = Color32::from_rgb(19, 26, 34);
+const CARD: Color32 = Color32::from_rgb(20, 27, 35);
+const WELL: Color32 = Color32::from_rgb(11, 16, 21);
+const BORDER: Color32 = Color32::from_rgb(33, 43, 55);
+const BORDER_STRONG: Color32 = Color32::from_rgb(48, 60, 76);
+const TEXT: Color32 = Color32::from_rgb(230, 237, 243);
+const MUTED: Color32 = Color32::from_rgb(135, 149, 163);
+const DIM: Color32 = Color32::from_rgb(109, 123, 137);
+const ACCENT: Color32 = Color32::from_rgb(31, 143, 130);
+const ACCENT_BG: Color32 = Color32::from_rgb(22, 52, 47);
+const ACCENT_TEXT: Color32 = Color32::from_rgb(111, 224, 208);
+const DANGER: Color32 = Color32::from_rgb(217, 83, 79);
+const DANGER_TEXT: Color32 = Color32::from_rgb(229, 138, 134);
+const DANGER_BORDER: Color32 = Color32::from_rgb(90, 47, 46);
+
 fn main() -> eframe::Result {
     eframe::run_native(
         "Preview Maker",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
-                .with_inner_size([850.0, 700.0])
-                .with_min_inner_size([480.0, 400.0]),
+                .with_inner_size([1100.0, 820.0])
+                .with_min_inner_size([640.0, 500.0]),
             ..Default::default()
         },
-        Box::new(|_| Ok(Box::<PreviewApp>::default())),
+        Box::new(|cc| {
+            apply_theme(&cc.egui_ctx);
+            Ok(Box::<PreviewApp>::default())
+        }),
     )
+}
+
+fn apply_theme(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+
+    style.spacing.item_spacing = vec2(10.0, 10.0);
+    style.spacing.button_padding = vec2(14.0, 6.0);
+
+    style
+        .text_styles
+        .insert(TextStyle::Heading, FontId::proportional(18.0));
+    style
+        .text_styles
+        .insert(TextStyle::Body, FontId::proportional(13.5));
+    style
+        .text_styles
+        .insert(TextStyle::Button, FontId::proportional(13.5));
+    style
+        .text_styles
+        .insert(TextStyle::Small, FontId::proportional(11.5));
+    style
+        .text_styles
+        .insert(TextStyle::Monospace, FontId::monospace(12.0));
+
+    let mut v = egui::Visuals::dark();
+    v.panel_fill = BG;
+    v.window_fill = PANEL;
+    v.extreme_bg_color = WELL;
+    v.selection.bg_fill = ACCENT;
+    v.override_text_color = Some(TEXT);
+
+    let radius = CornerRadius::same(6);
+    v.widgets.inactive.corner_radius = radius;
+    v.widgets.hovered.corner_radius = radius;
+    v.widgets.active.corner_radius = radius;
+    v.widgets.noninteractive.corner_radius = radius;
+
+    v.widgets.inactive.weak_bg_fill = Color32::from_rgb(24, 33, 43);
+    v.widgets.inactive.bg_fill = Color32::from_rgb(24, 33, 43);
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER_STRONG);
+    v.widgets.hovered.weak_bg_fill = Color32::from_rgb(32, 43, 56);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(70, 86, 106));
+    v.widgets.active.weak_bg_fill = Color32::from_rgb(38, 51, 67);
+
+    style.visuals = v;
+    ctx.set_style(style);
+}
+
+// ---------- widgets ----------
+fn primary_button(text: &str) -> egui::Button<'static> {
+    egui::Button::new(
+        RichText::new(text.to_owned())
+            .color(Color32::WHITE)
+            .strong(),
+    )
+    .fill(ACCENT)
+    .stroke(Stroke::new(1.0_f32, ACCENT))
+    .min_size(vec2(0.0, 32.0))
+}
+
+fn secondary_button(text: &str) -> egui::Button<'static> {
+    egui::Button::new(RichText::new(text.to_owned())).min_size(vec2(0.0, 32.0))
+}
+
+fn chip(ui: &mut egui::Ui, label: &str, selected: bool) -> bool {
+    let button = egui::Button::new(
+        RichText::new(label.to_owned())
+            .size(12.0)
+            .color(if selected { ACCENT_TEXT } else { MUTED }),
+    )
+    .fill(if selected {
+        ACCENT_BG
+    } else {
+        Color32::TRANSPARENT
+    })
+    .stroke(Stroke::new(
+        1.0_f32,
+        if selected { ACCENT } else { BORDER_STRONG },
+    ))
+    .corner_radius(CornerRadius::same(12))
+    .min_size(vec2(0.0, 24.0));
+    ui.add(button).clicked()
+}
+
+fn model_card(ui: &mut egui::Ui, model: &Model, texture: Option<&egui::TextureHandle>, width: f32) {
+    const PAD: f32 = 10.0;
+    let failed = matches!(model.state, State::Failed(_));
+    let inner = (width - PAD * 2.0 - 2.0).max(60.0);
+
+    let out = egui::Frame::new()
+        .fill(CARD)
+        .stroke(Stroke::new(
+            1.0_f32,
+            if failed { DANGER_BORDER } else { BORDER },
+        ))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(PAD as i8))
+        .show(ui, |ui| {
+            ui.set_width(inner);
+            ui.spacing_mut().item_spacing.y = 3.0;
+
+            let (rect, _) = ui.allocate_exact_size(vec2(inner, inner), egui::Sense::hover());
+            ui.painter().rect_filled(
+                rect,
+                6.0,
+                if failed {
+                    Color32::from_rgb(24, 22, 26)
+                } else {
+                    Color32::from_rgb(26, 34, 44)
+                },
+            );
+
+            if let Some(texture) = texture {
+                ui.put(
+                    rect,
+                    egui::Image::new(texture)
+                        .fit_to_exact_size(rect.size())
+                        .corner_radius(6.0),
+                );
+            } else if matches!(model.state, State::Pending) {
+                let spinner_rect = egui::Rect::from_center_size(rect.center(), vec2(26.0, 26.0));
+                egui::Spinner::new()
+                    .size(26.0)
+                    .color(ACCENT)
+                    .paint_at(ui, spinner_rect);
+            } else {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "No image",
+                    FontId::proportional(13.0),
+                    DIM,
+                );
+            }
+
+            // status badge (drawn with lines so it doesn't depend on font glyphs)
+            if !matches!(model.state, State::Pending) {
+                let c = rect.right_top() + vec2(-15.0, 15.0);
+                let painter = ui.painter();
+                painter.circle_filled(c, 10.0, if failed { DANGER } else { ACCENT });
+                let stroke = Stroke::new(1.8_f32, Color32::WHITE);
+                if failed {
+                    painter.line_segment([c + vec2(-3.5, -3.5), c + vec2(3.5, 3.5)], stroke);
+                    painter.line_segment([c + vec2(-3.5, 3.5), c + vec2(3.5, -3.5)], stroke);
+                } else {
+                    painter.line_segment([c + vec2(-4.0, 0.5), c + vec2(-1.2, 3.3)], stroke);
+                    painter.line_segment([c + vec2(-1.2, 3.3), c + vec2(4.0, -3.0)], stroke);
+                }
+            }
+
+            ui.add_space(5.0);
+
+            // primary line
+            let (title, title_color) = match (&model.state, model.title.is_empty()) {
+                (State::Pending, _) => ("Loading…".to_owned(), MUTED),
+                (_, true) => ("Untitled model".to_owned(), MUTED),
+                (_, false) => (model.title.clone(), TEXT),
+            };
+            ui.add(egui::Label::new(RichText::new(title).strong().color(title_color)).truncate());
+
+            // error line
+            if let State::Failed(error) = &model.state {
+                ui.add(
+                    egui::Label::new(RichText::new(error).small().color(DANGER_TEXT)).truncate(),
+                )
+                .on_hover_text(error);
+            }
+
+            // id line
+            ui.add(
+                egui::Label::new(RichText::new(&model.id).monospace().small().color(DIM))
+                    .truncate(),
+            )
+            .on_hover_text(&model.id);
+        });
+
+    if ui.rect_contains_pointer(out.response.rect) {
+        ui.painter().rect_stroke(
+            out.response.rect,
+            8.0,
+            Stroke::new(1.0_f32, if failed { DANGER } else { ACCENT }),
+            StrokeKind::Inside,
+        );
+    }
+}
+
+// ---------- app ----------
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum Filter {
+    #[default]
+    All,
+    Saved,
+    Failed,
 }
 
 #[derive(Default)]
@@ -35,9 +251,19 @@ struct PreviewApp {
     folder: String,
     status: String,
     running: bool,
+    fetching: bool,
+    filter: Filter,
     models: Vec<Model>,
     textures: Vec<Option<egui::TextureHandle>>,
     events: Option<Receiver<Event>>,
+}
+
+#[derive(Clone, Default, PartialEq)]
+enum State {
+    #[default]
+    Pending,
+    Saved,
+    Failed(String),
 }
 
 #[derive(Clone, Default)]
@@ -45,6 +271,7 @@ struct Model {
     id: String,
     title: String,
     image_path: Option<PathBuf>,
+    state: State,
 }
 
 enum Event {
@@ -58,107 +285,209 @@ impl eframe::App for PreviewApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.receive_events(ctx);
 
-        egui::TopBottomPanel::top("header").show(ctx, |ui| {
-            ui.vertical_centered(|ui| ui.heading("PREVIEW MAKER"));
-        });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if ui.button("Choose main folder…").clicked() {
-                    if let Some(path) = choose_folder() {
-                        self.folder = path.to_string_lossy().into_owned();
-                        self.status.clear();
-                    }
-                }
-                ui.label(&self.folder);
-            });
-
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(!self.running, egui::Button::new("Find previews"))
-                    .clicked()
-                {
-                    self.start_scan(ctx.clone());
-                }
-                if ui
-                    .add_enabled(!self.running, egui::Button::new("Scan folder"))
-                    .clicked()
-                {
-                    self.start_folder_scan(ctx.clone());
-                }
-            });
-            if !self.status.is_empty() {
-                ui.label(&self.status);
+        // drag & drop a folder onto the window
+        if !self.running {
+            let dropped = ctx.input(|i| i.raw.dropped_files.clone());
+            if let Some(path) = dropped
+                .into_iter()
+                .find_map(|file| file.path)
+                .filter(|path| path.is_dir())
+            {
+                self.set_folder(path);
             }
+        }
 
-            if self.running || !self.models.is_empty() {
+        // ----- header -----
+        egui::TopBottomPanel::top("header")
+            .frame(
+                egui::Frame::new()
+                    .fill(PANEL)
+                    .stroke(Stroke::new(1.0_f32, BORDER))
+                    .inner_margin(Margin::symmetric(20, 12)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    let enabled = !self.running;
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui
+                            .add_enabled(enabled, primary_button("Find and save previews"))
+                            .clicked()
+                        {
+                            self.start_scan(ctx.clone());
+                        }
+                        if ui
+                            .add_enabled(enabled, secondary_button("Scan existing"))
+                            .on_hover_text("Checks local JPG and PNG files only")
+                            .clicked()
+                        {
+                            self.start_folder_scan(ctx.clone());
+                        }
+                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                            ui.label(RichText::new("Preview Maker").heading().strong());
+                            ui.add_space(12.0);
+                            if ui
+                                .add_enabled(enabled, secondary_button("Choose folder…"))
+                                .clicked()
+                            {
+                                if let Some(path) = choose_folder() {
+                                    self.set_folder(path);
+                                }
+                            }
+                            ui.add_enabled(
+                                enabled,
+                                egui::TextEdit::singleline(&mut self.folder)
+                                    .hint_text("Folder containing your model folders")
+                                    .font(TextStyle::Monospace)
+                                    .margin(Margin::symmetric(10, 7))
+                                    .desired_width(ui.available_width()),
+                            );
+                        });
+                    });
+                });
+            });
+
+        // ----- footer / status -----
+        if self.running || !self.status.is_empty() {
+            egui::TopBottomPanel::bottom("status")
+                .frame(
+                    egui::Frame::new()
+                        .fill(PANEL)
+                        .stroke(Stroke::new(1.0_f32, BORDER))
+                        .inner_margin(Margin::symmetric(20, 8)),
+                )
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        if self.running {
+                            ui.add(egui::Spinner::new().size(14.0).color(ACCENT));
+                        }
+                        ui.label(RichText::new(&self.status).small().color(MUTED));
+                    });
+                });
+        }
+
+        // ----- content -----
+        let mut pick_folder = false;
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(BG)
+                    .inner_margin(Margin::symmetric(20, 14)),
+            )
+            .show(ctx, |ui| {
+                let total = self.models.len();
+                let saved = self.models.iter().filter(|m| m.state == State::Saved).count();
+                let failed = self
+                    .models
+                    .iter()
+                    .filter(|m| matches!(m.state, State::Failed(_)))
+                    .count();
+                let pending = self.models.iter().filter(|m| m.state == State::Pending).count();
+
+                ui.horizontal(|ui| {
+                    ui.heading("Previews");
+                    if total > 0 {
+                        ui.label(RichText::new(format!("{saved} of {total} saved")).color(MUTED));
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            if chip(ui, &format!("Errors {failed}"), self.filter == Filter::Failed) {
+                                self.filter = Filter::Failed;
+                            }
+                            if chip(ui, &format!("Saved {saved}"), self.filter == Filter::Saved) {
+                                self.filter = Filter::Saved;
+                            }
+                            if chip(ui, &format!("All {total}"), self.filter == Filter::All) {
+                                self.filter = Filter::All;
+                            }
+                        });
+                    }
+                });
+
+                if self.running && self.fetching && total > 0 {
+                    let fraction = (total - pending) as f32 / total as f32;
+                    ui.add(
+                        egui::ProgressBar::new(fraction)
+                            .desired_height(4.0)
+                            .fill(ACCENT)
+                            .corner_radius(CornerRadius::same(2)),
+                    );
+                }
+                ui.add_space(4.0);
+
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        let gap = 12.0;
-                        let min_card_width = 260.0;
-                        let available_width = ui.available_width();
-                        let columns = ((available_width + gap) / (min_card_width + gap))
-                            .floor()
-                            .max(1.0) as usize;
-                        let card_width = ((available_width - gap * (columns - 1) as f32)
-                            / columns as f32)
-                            .max(min_card_width);
-                        let image_size = (card_width - 32.0).min(240.0);
-
-                        egui::Grid::new("models")
-                            .num_columns(columns)
-                            .spacing(egui::vec2(gap, gap))
-                            .show(ui, |ui| {
-                                for (index, model) in self.models.iter().enumerate() {
-                                    egui::Frame::group(ui.style()).show(ui, |ui| {
-                                        ui.set_min_width(card_width);
-                                        ui.set_max_width(card_width);
-                                        ui.set_min_height(240.0);
-                                        ui.vertical_centered(|ui| {
-                                            if let Some(texture) =
-                                                self.textures.get(index).and_then(Option::as_ref)
-                                            {
-                                                ui.add(
-                                                    egui::Image::new(texture).fit_to_exact_size(
-                                                        egui::vec2(image_size, image_size),
-                                                    ),
-                                                );
-                                            } else {
-                                                ui.allocate_exact_size(
-                                                    egui::vec2(image_size, image_size),
-                                                    egui::Sense::hover(),
-                                                );
-                                                ui.label(if model.title.is_empty() {
-                                                    "Searching…"
-                                                } else {
-                                                    &model.title
-                                                });
-                                            }
-                                            ui.label(&model.id);
-                                            if !model.title.is_empty()
-                                                && self
-                                                    .textures
-                                                    .get(index)
-                                                    .and_then(Option::as_ref)
-                                                    .is_some()
-                                            {
-                                                ui.colored_label(
-                                                    egui::Color32::from_rgb(190, 92, 130),
-                                                    &model.title,
-                                                );
-                                            }
-                                        });
-                                    });
-                                    if (index + 1) % columns == 0 {
-                                        ui.end_row();
-                                    }
+                        if self.models.is_empty() {
+                            ui.add_space(70.0);
+                            ui.vertical_centered(|ui| {
+                                ui.label(RichText::new("▧").size(44.0).color(BORDER_STRONG));
+                                ui.add_space(6.0);
+                                ui.label(RichText::new("Pick a model folder").heading());
+                                ui.label(
+                                    RichText::new(
+                                        "Choose it above or drop it onto this window. Then find previews online or scan images already saved there.",
+                                    )
+                                    .color(MUTED),
+                                );
+                                ui.add_space(8.0);
+                                if ui
+                                    .add_enabled(!self.running, primary_button("Choose folder…"))
+                                    .clicked()
+                                {
+                                    pick_folder = true;
                                 }
                             });
+                            return;
+                        }
+
+                        let visible: Vec<usize> = self
+                            .models
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, m)| match self.filter {
+                                Filter::All => true,
+                                Filter::Saved => m.state == State::Saved,
+                                Filter::Failed => matches!(m.state, State::Failed(_)),
+                            })
+                            .map(|(i, _)| i)
+                            .collect();
+
+                        if visible.is_empty() {
+                            ui.add_space(40.0);
+                            ui.vertical_centered(|ui| {
+                                ui.label(RichText::new("Nothing matches this filter").color(MUTED));
+                            });
+                            return;
+                        }
+
+                        let gap = 14.0;
+                        let min_card = 200.0;
+                        let available = ui.available_width() - 6.0;
+                        let columns = (((available + gap) / (min_card + gap)).floor() as usize).max(1);
+                        let card_width =
+                            ((available - gap * (columns - 1) as f32) / columns as f32).max(120.0);
+
+                        ui.spacing_mut().item_spacing = vec2(gap, gap);
+                        for row in visible.chunks(columns) {
+                            ui.horizontal_top(|ui| {
+                                for &index in row {
+                                    model_card(
+                                        ui,
+                                        &self.models[index],
+                                        self.textures.get(index).and_then(Option::as_ref),
+                                        card_width,
+                                    );
+                                }
+                            });
+                        }
+                        ui.add_space(8.0);
                     });
+            });
+
+        if pick_folder {
+            if let Some(path) = choose_folder() {
+                self.set_folder(path);
             }
-        });
+        }
 
         if self.running {
             ctx.request_repaint_after(Duration::from_millis(100));
@@ -167,6 +496,14 @@ impl eframe::App for PreviewApp {
 }
 
 impl PreviewApp {
+    fn set_folder(&mut self, path: PathBuf) {
+        self.folder = path.to_string_lossy().into_owned();
+        self.status.clear();
+        self.models.clear();
+        self.textures.clear();
+        self.filter = Filter::All;
+    }
+
     fn start_folder_scan(&mut self, ctx: egui::Context) {
         let root = PathBuf::from(self.folder.trim());
         if !root.is_dir() {
@@ -175,6 +512,8 @@ impl PreviewApp {
         }
 
         self.running = true;
+        self.fetching = false;
+        self.filter = Filter::All;
         self.status = "Looking for preview images…".into();
         self.models.clear();
         self.textures.clear();
@@ -195,6 +534,8 @@ impl PreviewApp {
         }
 
         self.running = true;
+        self.fetching = true;
+        self.filter = Filter::All;
         self.status = "Reading folders…".into();
         self.models.clear();
         self.textures.clear();
@@ -329,8 +670,12 @@ fn scan_and_fetch(root: &Path, events: &Sender<Event>) -> String {
                 downloaded += 1;
                 model.title = title;
                 model.image_path = Some(path);
+                model.state = State::Saved;
             }
-            Err(error) => model.title = format!("No preview: {error}"),
+            Err(error) => {
+                let first_line = error.lines().next().unwrap_or("Unknown error").to_owned();
+                model.state = State::Failed(first_line);
+            }
         }
         let _ = events.send(Event::Updated(model));
     }
@@ -375,6 +720,7 @@ fn scan_folder_images(root: &Path, events: &Sender<Event>) -> String {
                         .unwrap_or_else(|| "root".into()),
                     title: name,
                     image_path: Some(path),
+                    state: State::Saved,
                 });
             }
         }
