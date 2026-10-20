@@ -20,24 +20,104 @@ const IMAGE_HOSTS: [&str; 3] = [
     "https://b7.3ddd.ru/media/cache/tuk_model_custom_filter_ang_ru/",
 ];
 
-// ---------- palette ----------
-const BG: Color32 = Color32::from_rgb(15, 20, 25);
-const PANEL: Color32 = Color32::from_rgb(19, 26, 34);
-const CARD: Color32 = Color32::from_rgb(20, 27, 35);
-const WELL: Color32 = Color32::from_rgb(11, 16, 21);
-const BORDER: Color32 = Color32::from_rgb(33, 43, 55);
-const BORDER_STRONG: Color32 = Color32::from_rgb(48, 60, 76);
-const TEXT: Color32 = Color32::from_rgb(230, 237, 243);
-const MUTED: Color32 = Color32::from_rgb(135, 149, 163);
-const DIM: Color32 = Color32::from_rgb(109, 123, 137);
-const ACCENT: Color32 = Color32::from_rgb(31, 143, 130);
-const ACCENT_BG: Color32 = Color32::from_rgb(22, 52, 47);
-const ACCENT_TEXT: Color32 = Color32::from_rgb(111, 224, 208);
-const DANGER: Color32 = Color32::from_rgb(217, 83, 79);
-const DANGER_TEXT: Color32 = Color32::from_rgb(229, 138, 134);
-const DANGER_BORDER: Color32 = Color32::from_rgb(90, 47, 46);
+#[derive(Clone, Copy, Default)]
+enum ThemeMode {
+    Light,
+    Dark,
+    #[default]
+    System,
+}
+
+impl ThemeMode {
+    fn from_args() -> Self {
+        std::env::args()
+            .skip(1)
+            .fold(Self::System, |mode, arg| match arg.as_str() {
+                "-light" | "--light" => Self::Light,
+                "-dark" | "--dark" => Self::Dark,
+                "-system" | "--system" => Self::System,
+                _ => mode,
+            })
+    }
+
+    fn preference(self) -> egui::ThemePreference {
+        match self {
+            Self::Light => egui::ThemePreference::Light,
+            Self::Dark => egui::ThemePreference::Dark,
+            Self::System => egui::ThemePreference::System,
+        }
+    }
+
+    fn active(self, ctx: &egui::Context) -> egui::Theme {
+        match self {
+            Self::Light => egui::Theme::Light,
+            Self::Dark => egui::Theme::Dark,
+            Self::System => ctx.system_theme().unwrap_or(egui::Theme::Dark),
+        }
+    }
+}
+
+struct Palette {
+    bg: Color32,
+    panel: Color32,
+    card: Color32,
+    well: Color32,
+    border: Color32,
+    border_strong: Color32,
+    text: Color32,
+    muted: Color32,
+    dim: Color32,
+    accent: Color32,
+    accent_bg: Color32,
+    accent_text: Color32,
+    danger: Color32,
+    danger_text: Color32,
+    danger_border: Color32,
+}
+
+impl Palette {
+    fn for_theme(theme: egui::Theme) -> Self {
+        match theme {
+            egui::Theme::Dark => Self {
+                bg: Color32::from_rgb(15, 20, 25),
+                panel: Color32::from_rgb(19, 26, 34),
+                card: Color32::from_rgb(20, 27, 35),
+                well: Color32::from_rgb(11, 16, 21),
+                border: Color32::from_rgb(33, 43, 55),
+                border_strong: Color32::from_rgb(48, 60, 76),
+                text: Color32::from_rgb(230, 237, 243),
+                muted: Color32::from_rgb(135, 149, 163),
+                dim: Color32::from_rgb(109, 123, 137),
+                accent: Color32::from_rgb(31, 143, 130),
+                accent_bg: Color32::from_rgb(22, 52, 47),
+                accent_text: Color32::from_rgb(111, 224, 208),
+                danger: Color32::from_rgb(217, 83, 79),
+                danger_text: Color32::from_rgb(229, 138, 134),
+                danger_border: Color32::from_rgb(90, 47, 46),
+            },
+            egui::Theme::Light => Self {
+                bg: Color32::from_rgb(243, 246, 249),
+                panel: Color32::from_rgb(232, 238, 243),
+                card: Color32::WHITE,
+                well: Color32::from_rgb(249, 250, 252),
+                border: Color32::from_rgb(207, 216, 224),
+                border_strong: Color32::from_rgb(157, 171, 184),
+                text: Color32::from_rgb(28, 39, 50),
+                muted: Color32::from_rgb(83, 99, 114),
+                dim: Color32::from_rgb(105, 120, 134),
+                accent: Color32::from_rgb(20, 133, 119),
+                accent_bg: Color32::from_rgb(218, 241, 236),
+                accent_text: Color32::from_rgb(8, 112, 98),
+                danger: Color32::from_rgb(196, 55, 50),
+                danger_text: Color32::from_rgb(171, 43, 38),
+                danger_border: Color32::from_rgb(232, 181, 177),
+            },
+        }
+    }
+}
 
 fn main() -> eframe::Result {
+    let theme_mode = ThemeMode::from_args();
     let icon = image::load_from_memory(include_bytes!("../macos/AppIcon.png"))
         .expect("decode app icon")
         .to_rgba8();
@@ -59,8 +139,10 @@ fn main() -> eframe::Result {
         Box::new(|cc| {
             #[cfg(target_os = "macos")]
             set_macos_about_icon();
-            apply_theme(&cc.egui_ctx);
-            Ok(Box::<PreviewApp>::default())
+            cc.egui_ctx.set_theme(theme_mode.preference());
+            let active_theme = theme_mode.active(&cc.egui_ctx);
+            apply_theme(&cc.egui_ctx, active_theme);
+            Ok(Box::new(PreviewApp::new(theme_mode, active_theme)))
         }),
     )
 }
@@ -81,7 +163,8 @@ fn set_macos_about_icon() {
     unsafe { NSApplication::sharedApplication(marker).setApplicationIconImage(Some(&image)) };
 }
 
-fn apply_theme(ctx: &egui::Context) {
+fn apply_theme(ctx: &egui::Context, theme: egui::Theme) {
+    let palette = Palette::for_theme(theme);
     let mut style = (*ctx.style()).clone();
 
     style.spacing.item_spacing = vec2(10.0, 10.0);
@@ -103,12 +186,15 @@ fn apply_theme(ctx: &egui::Context) {
         .text_styles
         .insert(TextStyle::Monospace, FontId::monospace(12.0));
 
-    let mut v = egui::Visuals::dark();
-    v.panel_fill = BG;
-    v.window_fill = PANEL;
-    v.extreme_bg_color = WELL;
-    v.selection.bg_fill = ACCENT;
-    v.override_text_color = Some(TEXT);
+    let mut v = match theme {
+        egui::Theme::Dark => egui::Visuals::dark(),
+        egui::Theme::Light => egui::Visuals::light(),
+    };
+    v.panel_fill = palette.bg;
+    v.window_fill = palette.panel;
+    v.extreme_bg_color = palette.well;
+    v.selection.bg_fill = palette.accent;
+    v.override_text_color = Some(palette.text);
 
     let radius = CornerRadius::same(6);
     v.widgets.inactive.corner_radius = radius;
@@ -116,26 +202,26 @@ fn apply_theme(ctx: &egui::Context) {
     v.widgets.active.corner_radius = radius;
     v.widgets.noninteractive.corner_radius = radius;
 
-    v.widgets.inactive.weak_bg_fill = Color32::from_rgb(24, 33, 43);
-    v.widgets.inactive.bg_fill = Color32::from_rgb(24, 33, 43);
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER_STRONG);
-    v.widgets.hovered.weak_bg_fill = Color32::from_rgb(32, 43, 56);
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(70, 86, 106));
-    v.widgets.active.weak_bg_fill = Color32::from_rgb(38, 51, 67);
+    v.widgets.inactive.weak_bg_fill = palette.panel;
+    v.widgets.inactive.bg_fill = palette.panel;
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, palette.border_strong);
+    v.widgets.hovered.weak_bg_fill = palette.card;
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, palette.border_strong);
+    v.widgets.active.weak_bg_fill = palette.border;
 
     style.visuals = v;
     ctx.set_style(style);
 }
 
 // ---------- widgets ----------
-fn primary_button(text: &str) -> egui::Button<'static> {
+fn primary_button(text: &str, palette: &Palette) -> egui::Button<'static> {
     egui::Button::new(
         RichText::new(text.to_owned())
             .color(Color32::WHITE)
             .strong(),
     )
-    .fill(ACCENT)
-    .stroke(Stroke::new(1.0_f32, ACCENT))
+    .fill(palette.accent)
+    .stroke(Stroke::new(1.0_f32, palette.accent))
     .min_size(vec2(0.0, 32.0))
 }
 
@@ -143,36 +229,54 @@ fn secondary_button(text: &str) -> egui::Button<'static> {
     egui::Button::new(RichText::new(text.to_owned())).min_size(vec2(0.0, 32.0))
 }
 
-fn chip(ui: &mut egui::Ui, label: &str, selected: bool) -> bool {
+fn chip(ui: &mut egui::Ui, label: &str, selected: bool, palette: &Palette) -> bool {
     let button = egui::Button::new(
         RichText::new(label.to_owned())
             .size(12.0)
-            .color(if selected { ACCENT_TEXT } else { MUTED }),
+            .color(if selected {
+                palette.accent_text
+            } else {
+                palette.muted
+            }),
     )
     .fill(if selected {
-        ACCENT_BG
+        palette.accent_bg
     } else {
         Color32::TRANSPARENT
     })
     .stroke(Stroke::new(
         1.0_f32,
-        if selected { ACCENT } else { BORDER_STRONG },
+        if selected {
+            palette.accent
+        } else {
+            palette.border_strong
+        },
     ))
     .corner_radius(CornerRadius::same(12))
     .min_size(vec2(0.0, 24.0));
     ui.add(button).clicked()
 }
 
-fn model_card(ui: &mut egui::Ui, model: &Model, texture: Option<&egui::TextureHandle>, width: f32) {
+fn model_card(
+    ui: &mut egui::Ui,
+    model: &Model,
+    texture: Option<&egui::TextureHandle>,
+    width: f32,
+    palette: &Palette,
+) {
     const PAD: f32 = 10.0;
     let failed = matches!(model.state, State::Failed(_));
     let inner = (width - PAD * 2.0 - 2.0).max(60.0);
 
     let out = egui::Frame::new()
-        .fill(CARD)
+        .fill(palette.card)
         .stroke(Stroke::new(
             1.0_f32,
-            if failed { DANGER_BORDER } else { BORDER },
+            if failed {
+                palette.danger_border
+            } else {
+                palette.border
+            },
         ))
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::same(PAD as i8))
@@ -213,7 +317,7 @@ fn model_card(ui: &mut egui::Ui, model: &Model, texture: Option<&egui::TextureHa
                         egui::Rect::from_center_size(rect.center(), vec2(26.0, 26.0));
                     egui::Spinner::new()
                         .size(26.0)
-                        .color(ACCENT)
+                        .color(palette.accent)
                         .paint_at(ui, spinner_rect);
                 } else {
                     ui.painter().text(
@@ -221,7 +325,7 @@ fn model_card(ui: &mut egui::Ui, model: &Model, texture: Option<&egui::TextureHa
                         egui::Align2::CENTER_CENTER,
                         "No image",
                         FontId::proportional(13.0),
-                        DIM,
+                        palette.dim,
                     );
                 }
 
@@ -229,9 +333,9 @@ fn model_card(ui: &mut egui::Ui, model: &Model, texture: Option<&egui::TextureHa
 
                 // primary line
                 let (title, title_color) = match (&model.state, model.title.is_empty()) {
-                    (State::Pending, _) => ("Loading…".to_owned(), MUTED),
-                    (_, true) => ("Untitled model".to_owned(), MUTED),
-                    (_, false) => (model.title.clone(), TEXT),
+                    (State::Pending, _) => ("Loading…".to_owned(), palette.muted),
+                    (_, true) => ("Untitled model".to_owned(), palette.muted),
+                    (_, false) => (model.title.clone(), palette.text),
                 };
                 ui.add(
                     egui::Label::new(RichText::new(title).strong().color(title_color)).truncate(),
@@ -240,7 +344,7 @@ fn model_card(ui: &mut egui::Ui, model: &Model, texture: Option<&egui::TextureHa
                 // error line
                 if let State::Failed(error) = &model.state {
                     ui.add(
-                        egui::Label::new(RichText::new(error).small().color(DANGER_TEXT))
+                        egui::Label::new(RichText::new(error).small().color(palette.danger_text))
                             .truncate(),
                     )
                     .on_hover_text(error);
@@ -248,8 +352,13 @@ fn model_card(ui: &mut egui::Ui, model: &Model, texture: Option<&egui::TextureHa
 
                 // id line
                 ui.add(
-                    egui::Label::new(RichText::new(&model.id).monospace().small().color(DIM))
-                        .truncate(),
+                    egui::Label::new(
+                        RichText::new(&model.id)
+                            .monospace()
+                            .small()
+                            .color(palette.dim),
+                    )
+                    .truncate(),
                 )
                 .on_hover_text(&model.id);
             });
@@ -259,7 +368,14 @@ fn model_card(ui: &mut egui::Ui, model: &Model, texture: Option<&egui::TextureHa
         ui.painter().rect_stroke(
             out.response.rect,
             8.0,
-            Stroke::new(1.0_f32, if failed { DANGER } else { ACCENT }),
+            Stroke::new(
+                1.0_f32,
+                if failed {
+                    palette.danger
+                } else {
+                    palette.accent
+                },
+            ),
             StrokeKind::Inside,
         );
     }
@@ -274,8 +390,9 @@ enum Filter {
     Failed,
 }
 
-#[derive(Default)]
 struct PreviewApp {
+    theme_mode: ThemeMode,
+    active_theme: egui::Theme,
     folder: String,
     status: String,
     running: bool,
@@ -311,6 +428,12 @@ enum Event {
 
 impl eframe::App for PreviewApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let active_theme = self.theme_mode.active(ctx);
+        if active_theme != self.active_theme {
+            self.active_theme = active_theme;
+            apply_theme(ctx, active_theme);
+        }
+        let palette = Palette::for_theme(active_theme);
         self.receive_events(ctx);
 
         // drag & drop a folder onto the window
@@ -329,8 +452,8 @@ impl eframe::App for PreviewApp {
         egui::TopBottomPanel::top("header")
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
-                    .stroke(Stroke::new(1.0_f32, BORDER))
+                    .fill(palette.panel)
+                    .stroke(Stroke::new(1.0_f32, palette.border))
                     .inner_margin(Margin::symmetric(20, 12)),
             )
             .show(ctx, |ui| {
@@ -338,7 +461,10 @@ impl eframe::App for PreviewApp {
                     let enabled = !self.running;
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui
-                            .add_enabled(enabled, primary_button("Find and save previews"))
+                            .add_enabled(
+                                enabled,
+                                primary_button("Find and save previews", &palette),
+                            )
                             .clicked()
                         {
                             self.start_scan(ctx.clone());
@@ -379,16 +505,16 @@ impl eframe::App for PreviewApp {
             egui::TopBottomPanel::bottom("status")
                 .frame(
                     egui::Frame::new()
-                        .fill(PANEL)
-                        .stroke(Stroke::new(1.0_f32, BORDER))
+                        .fill(palette.panel)
+                        .stroke(Stroke::new(1.0_f32, palette.border))
                         .inner_margin(Margin::symmetric(20, 8)),
                 )
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         if self.running {
-                            ui.add(egui::Spinner::new().size(14.0).color(ACCENT));
+                            ui.add(egui::Spinner::new().size(14.0).color(palette.accent));
                         }
-                        ui.label(RichText::new(&self.status).small().color(MUTED));
+                        ui.label(RichText::new(&self.status).small().color(palette.muted));
                     });
                 });
         }
@@ -399,7 +525,7 @@ impl eframe::App for PreviewApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(BG)
+                    .fill(palette.bg)
                     .inner_margin(Margin::symmetric(20, 14)),
             )
             .show(ctx, |ui| {
@@ -418,7 +544,9 @@ impl eframe::App for PreviewApp {
                     |ui| {
                     ui.heading("Previews");
                     if total > 0 {
-                        ui.label(RichText::new(format!("{saved} of {total} saved")).color(MUTED));
+                        ui.label(
+                            RichText::new(format!("{saved} of {total} saved")).color(palette.muted),
+                        );
                         if failed > 0
                             && ui
                                 .add_enabled(
@@ -431,13 +559,28 @@ impl eframe::App for PreviewApp {
                         }
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
-                            if chip(ui, &format!("Errors {failed}"), self.filter == Filter::Failed) {
+                            if chip(
+                                ui,
+                                &format!("Errors {failed}"),
+                                self.filter == Filter::Failed,
+                                &palette,
+                            ) {
                                 self.filter = Filter::Failed;
                             }
-                            if chip(ui, &format!("Saved {saved}"), self.filter == Filter::Saved) {
+                            if chip(
+                                ui,
+                                &format!("Saved {saved}"),
+                                self.filter == Filter::Saved,
+                                &palette,
+                            ) {
                                 self.filter = Filter::Saved;
                             }
-                            if chip(ui, &format!("All {total}"), self.filter == Filter::All) {
+                            if chip(
+                                ui,
+                                &format!("All {total}"),
+                                self.filter == Filter::All,
+                                &palette,
+                            ) {
                                 self.filter = Filter::All;
                             }
                         });
@@ -450,7 +593,7 @@ impl eframe::App for PreviewApp {
                     ui.add(
                         egui::ProgressBar::new(fraction)
                             .desired_height(4.0)
-                            .fill(ACCENT)
+                            .fill(palette.accent)
                             .corner_radius(CornerRadius::same(2)),
                     );
                 }
@@ -462,18 +605,23 @@ impl eframe::App for PreviewApp {
                         if self.models.is_empty() {
                             ui.add_space(70.0);
                             ui.vertical_centered(|ui| {
-                                ui.label(RichText::new("▧").size(44.0).color(BORDER_STRONG));
+                                ui.label(
+                                    RichText::new("▧").size(44.0).color(palette.border_strong),
+                                );
                                 ui.add_space(6.0);
                                 ui.label(RichText::new("Pick a model folder").heading());
                                 ui.label(
                                     RichText::new(
                                         "Choose it above or drop it onto this window. Then find previews online or scan images already saved there.",
                                     )
-                                    .color(MUTED),
+                                    .color(palette.muted),
                                 );
                                 ui.add_space(8.0);
                                 if ui
-                                    .add_enabled(!self.running, primary_button("Choose folder…"))
+                                    .add_enabled(
+                                        !self.running,
+                                        primary_button("Choose folder…", &palette),
+                                    )
                                     .clicked()
                                 {
                                     pick_folder = true;
@@ -497,7 +645,10 @@ impl eframe::App for PreviewApp {
                         if visible.is_empty() {
                             ui.add_space(40.0);
                             ui.vertical_centered(|ui| {
-                                ui.label(RichText::new("Nothing matches this filter").color(MUTED));
+                                ui.label(
+                                    RichText::new("Nothing matches this filter")
+                                        .color(palette.muted),
+                                );
                             });
                             return;
                         }
@@ -519,6 +670,7 @@ impl eframe::App for PreviewApp {
                                         &self.models[index],
                                         self.textures.get(index).and_then(Option::as_ref),
                                         card_width,
+                                        &palette,
                                     );
                                 }
                             });
@@ -543,6 +695,21 @@ impl eframe::App for PreviewApp {
 }
 
 impl PreviewApp {
+    fn new(theme_mode: ThemeMode, active_theme: egui::Theme) -> Self {
+        Self {
+            theme_mode,
+            active_theme,
+            folder: String::new(),
+            status: String::new(),
+            running: false,
+            fetching: false,
+            filter: Filter::All,
+            models: Vec::new(),
+            textures: Vec::new(),
+            events: None,
+        }
+    }
+
     fn set_folder(&mut self, path: PathBuf) {
         self.folder = path.to_string_lossy().into_owned();
         self.status.clear();

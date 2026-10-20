@@ -1,6 +1,6 @@
 [package]
 name = "preview-maker"
-version = "1.0.0"
+version = "1.0.1"
 description = "Finds and saves preview images for 3DDD models."
 license = "AGPL-3.0-only"
 edition = "2024"
