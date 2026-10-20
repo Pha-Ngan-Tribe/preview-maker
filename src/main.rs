@@ -13,12 +13,34 @@ use std::{
     time::Duration,
 };
 
-const API_URL: &str = "https://3ddd.ru/api/models";
 const IMAGE_HOSTS: [&str; 3] = [
     "https://b5.3ddd.ru/media/cache/tuk_model_custom_filter_ang_ru/",
     "https://b6.3ddd.ru/media/cache/tuk_model_custom_filter_ang_ru/",
     "https://b7.3ddd.ru/media/cache/tuk_model_custom_filter_ang_ru/",
 ];
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Source {
+    #[default]
+    ThreeDDD,
+    ThreeDSky,
+}
+
+impl Source {
+    fn label(self) -> &'static str {
+        match self {
+            Self::ThreeDDD => "3DDD",
+            Self::ThreeDSky => "3DSKY",
+        }
+    }
+
+    fn api_url(self) -> &'static str {
+        match self {
+            Self::ThreeDDD => "https://3ddd.ru/api/models",
+            Self::ThreeDSky => "https://3dsky.org/api/models",
+        }
+    }
+}
 
 #[derive(Clone, Copy, Default)]
 enum ThemeMode {
@@ -229,6 +251,33 @@ fn secondary_button(text: &str) -> egui::Button<'static> {
     egui::Button::new(RichText::new(text.to_owned())).min_size(vec2(0.0, 32.0))
 }
 
+fn source_toggle(ui: &mut egui::Ui, source: Source, selected: Source, palette: &Palette) -> bool {
+    let active = source == selected;
+    ui.add(
+        egui::Button::new(RichText::new(source.label()).strong().color(if active {
+            palette.accent_text
+        } else {
+            palette.muted
+        }))
+        .fill(if active {
+            palette.accent_bg
+        } else {
+            Color32::TRANSPARENT
+        })
+        .stroke(Stroke::new(
+            1.0_f32,
+            if active {
+                palette.accent
+            } else {
+                palette.border_strong
+            },
+        ))
+        .corner_radius(CornerRadius::same(6))
+        .min_size(vec2(68.0, 32.0)),
+    )
+    .clicked()
+}
+
 fn chip(ui: &mut egui::Ui, label: &str, selected: bool, palette: &Palette) -> bool {
     let button = egui::Button::new(
         RichText::new(label.to_owned())
@@ -393,6 +442,7 @@ enum Filter {
 struct PreviewApp {
     theme_mode: ThemeMode,
     active_theme: egui::Theme,
+    source: Source,
     folder: String,
     status: String,
     running: bool,
@@ -477,7 +527,13 @@ impl eframe::App for PreviewApp {
                             self.start_folder_scan(ctx.clone());
                         }
                         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                            ui.label(RichText::new("Preview maker").heading().strong());
+                            ui.horizontal(|ui| {
+                                for source in [Source::ThreeDDD, Source::ThreeDSky] {
+                                    if source_toggle(ui, source, self.source, &palette) {
+                                        self.source = source;
+                                    }
+                                }
+                            });
                             ui.add_space(12.0);
                             if ui
                                 .add_enabled(enabled, secondary_button("Choose folder…"))
@@ -699,6 +755,7 @@ impl PreviewApp {
         Self {
             theme_mode,
             active_theme,
+            source: Source::ThreeDDD,
             folder: String::new(),
             status: String::new(),
             running: false,
@@ -755,8 +812,9 @@ impl PreviewApp {
         self.textures.clear();
         let (sender, receiver) = mpsc::channel();
         self.events = Some(receiver);
+        let source = self.source;
         thread::spawn(move || {
-            let result = scan_and_fetch(&root, &sender);
+            let result = scan_and_fetch(&root, source, &sender);
             let _ = sender.send(Event::Finished(result));
             ctx.request_repaint();
         });
@@ -788,8 +846,9 @@ impl PreviewApp {
         self.status = format!("Retrying {} failed previews…", folders.len());
         let (sender, receiver) = mpsc::channel();
         self.events = Some(receiver);
+        let source = self.source;
         thread::spawn(move || {
-            let result = fetch_folders(&folders, &sender);
+            let result = fetch_folders(&folders, source, &sender);
             let _ = sender.send(Event::Finished(result));
             ctx.request_repaint();
         });
@@ -875,7 +934,7 @@ fn choose_folder() -> Option<PathBuf> {
     (!path.is_empty()).then(|| PathBuf::from(path))
 }
 
-fn scan_and_fetch(root: &Path, events: &Sender<Event>) -> String {
+fn scan_and_fetch(root: &Path, source: Source, events: &Sender<Event>) -> String {
     let folders = match fs::read_dir(root) {
         Ok(entries) => entries
             .filter_map(Result::ok)
@@ -901,10 +960,10 @@ fn scan_and_fetch(root: &Path, events: &Sender<Event>) -> String {
         .collect();
     let _ = events.send(Event::Found(models));
 
-    fetch_folders(&folders, events)
+    fetch_folders(&folders, source, events)
 }
 
-fn fetch_folders(folders: &[(String, PathBuf)], events: &Sender<Event>) -> String {
+fn fetch_folders(folders: &[(String, PathBuf)], source: Source, events: &Sender<Event>) -> String {
     let total = folders.len();
     let mut downloaded = 0;
     for (index, (id, folder)) in folders.iter().enumerate() {
@@ -916,7 +975,7 @@ fn fetch_folders(folders: &[(String, PathBuf)], events: &Sender<Event>) -> Strin
             id: id.clone(),
             ..Default::default()
         };
-        match fetch_and_save(id, folder) {
+        match fetch_and_save(id, folder, source) {
             Ok((title, path)) => {
                 downloaded += 1;
                 model.title = title;
@@ -1003,7 +1062,7 @@ fn is_model_id(name: &str) -> bool {
         && uuid.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn fetch_and_save(id: &str, folder: &Path) -> Result<(String, PathBuf), String> {
+fn fetch_and_save(id: &str, folder: &Path, source: Source) -> Result<(String, PathBuf), String> {
     let body = serde_json::to_string(&serde_json::json!({ "query": id }))
         .map_err(|error| error.to_string())?;
     let response = Command::new("curl")
@@ -1016,7 +1075,7 @@ fn fetch_and_save(id: &str, folder: &Path) -> Result<(String, PathBuf), String> 
             "Content-Type: application/json",
             "-d",
             &body,
-            API_URL,
+            source.api_url(),
         ])
         .output()
         .map_err(|error| format!("Could not start request: {error}"))?;
