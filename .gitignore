@@ -2,3 +2,9 @@
 /dist/
 **/*.rs.bk
 .DS_Store
+
+# Downloaded preview fixtures used only for local manual checks.
+/tests/*/*.jpeg
+/tests/*/*.jpg
+/tests/*/*.png
+/tests/*/*_notFound.svg

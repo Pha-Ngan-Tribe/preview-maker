@@ -11,7 +11,7 @@ if [ -z "$VERSION" ]; then
 fi
 SHORT_VERSION=${VERSION%.*}
 
-cargo build --release
+cargo build --locked --release
 
 APP="$ROOT_DIR/dist/Preview maker.app"
 CONTENTS="$APP/Contents"

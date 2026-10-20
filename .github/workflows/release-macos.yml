@@ -1,0 +1,83 @@
+name: Release macOS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build and package app
+        run: |
+          ./scripts/package-macos.sh
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dist/Preview maker.app" \
+            "dist/Preview-maker-macos-${{ matrix.arch }}.zip"
+
+      - name: Upload packaged app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Preview-maker-macos-${{ matrix.arch }}
+          path: dist/Preview-maker-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Download packaged apps
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: Preview-maker-macos-*
+          merge-multiple: true
+
+      - name: Read app version
+        id: version
+        run: echo "value=$(sed -n 's/^version = \"\([^\"]*\)\"/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Preview maker ${{ steps.version.outputs.value }} (build ${{ github.run_number }})
+          target_commitish: ${{ github.sha }}
+          body: |
+            Automated macOS build from `main`.
+
+            - `Preview-maker-macos-arm64.zip` — Apple Silicon
+            - `Preview-maker-macos-x86_64.zip` — Intel
+
+            This app is not notarized, so macOS may warn before opening it.
+          make_latest: true
+          files: dist/Preview-maker-macos-*.zip
+          fail_on_unmatched_files: true
