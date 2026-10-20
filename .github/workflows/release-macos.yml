@@ -1,4 +1,4 @@
-name: Release macOS
+name: Release Preview Maker
 
 on:
   push:
@@ -46,9 +46,40 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build-windows:
+    name: Build Windows (x86_64)
+    runs-on: windows-2025
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build standalone executable
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --locked --release
+
+      - name: Stage release executable
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/preview-maker.exe dist/Preview-maker-windows-x86_64.exe
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Preview-maker-windows-x86_64
+          path: dist/Preview-maker-windows-x86_64.exe
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -58,7 +89,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
-          pattern: Preview-maker-macos-*
+          pattern: Preview-maker-*
           merge-multiple: true
 
       - name: Read app version
@@ -72,12 +103,15 @@ jobs:
           name: Preview maker ${{ steps.version.outputs.value }} (build ${{ github.run_number }})
           target_commitish: ${{ github.sha }}
           body: |
-            Automated macOS build from `main`.
+            Automated build from `main`.
 
             - `Preview-maker-macos-arm64.zip` — Apple Silicon
             - `Preview-maker-macos-x86_64.zip` — Intel
+            - `Preview-maker-windows-x86_64.exe` — Windows 10/11 x64, standalone
 
             This app is not notarized, so macOS may warn before opening it.
           make_latest: true
-          files: dist/Preview-maker-macos-*.zip
+          files: |
+            dist/Preview-maker-macos-*.zip
+            dist/Preview-maker-windows-x86_64.exe
           fail_on_unmatched_files: true
